@@ -1,0 +1,12 @@
+[submodule "rodincore"]
+	path = rodincore
+	url = https://github.com/eventb-rossi/rodincore.git
+	branch = rossi
+[submodule "rodin-b-sharp-smt"]
+	path = rodin-b-sharp-smt
+	url = https://github.com/eventb-rossi/rodin-b-sharp-smt.git
+	branch = rossi
+[submodule "POCleaner"]
+	path = POCleaner
+	url = https://github.com/eventb-rossi/POCleaner.git
+	branch = rossi

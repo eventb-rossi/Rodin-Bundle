@@ -1,0 +1,71 @@
+name: Smoke
+
+# Reusable per-platform smoke test.  Tycho materializes every platform's
+# archive on Linux, so this is the only place the archives are exercised on
+# the operating system they target.
+on:
+  workflow_call:
+
+jobs:
+  smoke:
+    name: Smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            pattern: "*linux.gtk.x86_64.tar.gz"
+          - os: windows-latest
+            pattern: "*win32.win32.x86_64.zip"
+          - os: macos-latest
+            pattern: "*macosx.cocoa.x86_64.tar.gz"
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: assets
+          path: assets
+
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Unpack the archive for this platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=$(ls assets/${{ matrix.pattern }})
+          echo "Unpacking $archive"
+          mkdir -p rodin
+          case "$archive" in
+            *.zip)    unzip -q "$archive" -d rodin ;;
+            *.tar.gz) tar xzf "$archive" -C rodin ;;
+          esac
+
+      - name: Assert the bundle really contains our features
+        # Runs the p2 director against the unpacked product and checks that the
+        # roots we added are installed.  This catches a product that assembles
+        # but cannot start, which a file listing would not.
+        shell: bash
+        run: |
+          set -euo pipefail
+          launcher=$(find rodin -name 'org.eclipse.equinox.launcher_*.jar' | head -1)
+          test -n "$launcher" || { echo "no equinox launcher in the archive"; exit 1; }
+          dest=$(dirname "$(dirname "$launcher")")
+          java -jar "$launcher" -nosplash \
+               -application org.eclipse.equinox.p2.director \
+               -destination "$dest" -listInstalledRoots > roots.txt
+          cat roots.txt
+          # p2 roots carry the .feature.group suffix, and only the product and
+          # the features the product marks installMode="root" are roots at all.
+          for iu in org.eventb.rossi.product \
+                    org.eventb.smt.feature.group \
+                    ru.ispras.eventb.pocleaner.feature.feature.group; do
+            grep -q "^$iu/" roots.txt || { echo "MISSING installed root: $iu"; exit 1; }
+          done
+          # The Rodin platform is pulled in by the product rather than being a
+          # root of its own, so check it landed on disk instead.
+          ls "$dest/features" | grep -q '^org\.rodinp\.platform_' \
+            || { echo "MISSING feature: org.rodinp.platform"; exit 1; }
+          echo "product, SMT, POCleaner and the Rodin platform are all present"

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<!--
+	    Aggregator for the eventb-rossi Rodin bundle.
+
+	    The three component repositories are git submodules, each of which
+	    keeps its own upstream remote so it can be rebased independently.
+	    Listing their aggregator POMs as modules puts every bundle into a
+	    single Tycho reactor, so the SMT plug-in and POCleaner resolve the
+	    Rodin bundles built alongside them rather than a published p2 site.
+	-->
+	<groupId>org.eventb.rossi</groupId>
+	<artifactId>root</artifactId>
+	<version>3.10.0-SNAPSHOT</version>
+	<packaging>pom</packaging>
+
+	<name>Rodin Bundle (eventb-rossi)</name>
+
+	<modules>
+		<module>rodincore</module>
+		<module>rodin-b-sharp-smt</module>
+		<module>POCleaner</module>
+		<module>bundle</module>
+	</modules>
+
+</project>

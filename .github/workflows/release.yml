@@ -1,0 +1,184 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re)build assets for, e.g. v3.10.0-2609"
+        required: true
+        type: string
+
+concurrency:
+  # Never cancel a half-finished publish.
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: The tag must name the Rodin version actually being built
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-[0-9]{4}(-rc[0-9]+)?$ ]]; then
+            echo "Tag '$TAG' does not match vX.Y.Z-YYMM (optionally -rcN)." >&2
+            exit 1
+          fi
+          tag_version="${BASH_REMATCH[1]}"
+          pom_version=$(sed -n 's|.*<version>\(.*\)-SNAPSHOT</version>.*|\1|p' bundle/pom.xml | head -1)
+          echo "tag says $tag_version, bundle/pom.xml says $pom_version"
+          if [ "$tag_version" != "$pom_version" ]; then
+            echo "Tag claims Rodin $tag_version but the bundle builds $pom_version." >&2
+            exit 1
+          fi
+
+      - name: The submodule pins must be current
+        # A release is built from the recorded pins so the tag is reproducible.
+        # That is only safe if the pins are what we think they are, so refuse to
+        # publish a release that would silently ship stale submodule commits.
+        run: |
+          set -euo pipefail
+          stale=0
+          while read -r sha path _; do
+            branch=$(git config -f .gitmodules "submodule.${path}.branch")
+            tip=$(git ls-remote "$(git config -f .gitmodules "submodule.${path}.url")" \
+                    "refs/heads/${branch}" | cut -f1)
+            if [ "$sha" != "$tip" ]; then
+              echo "::error::$path is pinned at ${sha:0:12} but ${branch} is at ${tip:0:12}"
+              stale=1
+            else
+              echo "$path pinned at ${sha:0:12} (= ${branch} tip)"
+            fi
+          done < <(git submodule status --cached | sed 's/^[+-]//')
+          if [ "$stale" -ne 0 ]; then
+            echo "Update the submodule pins on main and re-tag." >&2
+            exit 1
+          fi
+
+  build:
+    needs: guard
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+      pin-submodules: true
+
+  smoke:
+    needs: build
+    uses: ./.github/workflows/smoke.yml
+
+  publish:
+    name: Publish release
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload its assets
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: assets
+          path: assets
+
+      - name: Write the release notes header
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # The built update site names every feature <id>_<version>.jar, so the
+          # versions in the notes are the ones actually shipped, not a guess.
+          mkdir -p site && unzip -qo assets/rodin-bundle-update-site.zip -d site
+          version_of() {
+            find site/features -name "$1_*.jar" -printf '%f\n' \
+              | sed -E "s/^$1_(.*)\.jar$/\1/" | sort -V | tail -1
+          }
+          {
+            echo "Rodin platform bundle for Event-B, built from Rodin 3.10."
+            echo
+            echo "| Feature | Version |"
+            echo "| --- | --- |"
+            echo "| Rodin platform | \`$(version_of org.rodinp.platform)\` |"
+            echo "| Event-B IDE | \`$(version_of org.eventb.ide)\` |"
+            echo "| SMT provers | \`$(version_of org.eventb.smt)\` |"
+            echo "| Proof Obligation Cleaner | \`$(version_of ru.ispras.eventb.pocleaner.feature)\` |"
+            echo
+            echo "### Before you install"
+            echo
+            echo "- Requires a 64-bit Java 21 runtime or later."
+            echo "- **SMT provers are not available on Apple Silicon.** The bundled solver"
+            echo "  binaries are x86_64 only, the same limitation the official Rodin 3.10"
+            echo "  release carries. Use the \`macosx.cocoa.x86_64\` build with an Intel JVM"
+            echo "  if you need them."
+            echo "- The macOS build is not notarized. After downloading, run"
+            echo "  \`xattr -rc Rodin.app\`."
+            echo "- \`SHA256SUMS\` is attached; verify with \`sha256sum -c SHA256SUMS\`."
+            echo
+          } > RELEASE_NOTES.md
+
+      - name: Append the generated changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" --jq .body >> RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # This job deliberately does not check the repository out -- it only
+          # needs the built artifacts -- so every gh call must name the repo.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists; replacing its assets."
+            gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Rodin Bundle $TAG" \
+              --notes-file RELEASE_NOTES.md
+          fi
+
+  checksums:
+    name: SHA256SUMS
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach SHA256SUMS to the release
+    steps:
+      - name: Hash the published assets
+        # Deliberately hashes what the release actually serves rather than what
+        # the build produced, so a truncated or missing upload is caught here.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'rodin-*.tar.gz' --pattern 'rodin-*.zip'
+          archives=(rodin-*.tar.gz rodin-*.zip)
+          if [ ${#archives[@]} -eq 0 ]; then
+            echo "No release archives found for $TAG" >&2
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

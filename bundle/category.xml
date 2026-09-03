@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <feature id="org.rodinp.platform">
+      <category name="rodin"/>
+   </feature>
+   <feature id="org.eventb.ide">
+      <category name="rodin"/>
+   </feature>
+   <feature id="org.eventb.smt">
+      <category name="provers"/>
+   </feature>
+   <feature id="ru.ispras.eventb.pocleaner.feature">
+      <category name="tools"/>
+   </feature>
+   <category-def name="rodin" label="Rodin Platform">
+      <description>The Rodin platform for Event-B.</description>
+   </category-def>
+   <category-def name="provers" label="Provers">
+      <description>SMT solvers and prover integrations.</description>
+   </category-def>
+   <category-def name="tools" label="Event-B Tools">
+      <description>Tools for working with Event-B models.</description>
+   </category-def>
+</site>

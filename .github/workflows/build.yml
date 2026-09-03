@@ -1,0 +1,105 @@
+name: Build
+
+# Reusable build, called by both ci.yml and release.yml so the Tycho
+# invocation lives in exactly one place.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build. Defaults to the caller's ref.
+        required: false
+        type: string
+        default: ""
+      pin-submodules:
+        description: >-
+          Build the exact submodule commits recorded in this repository rather
+          than the tips of their rossi branches.  Releases set this so a tag is
+          reproducible; CI leaves it false so it tests current rossi.
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build bundle
+    runs-on: ubuntu-latest
+    env:
+      # The stock Rodin product is built by rodincore's own repository module.
+      # We build our own product in bundle/, so skip it and halve the number of
+      # product archives Tycho has to materialize.
+      MAVEN_MODULES: "-pl !rodincore/org.rodinp.platform.repository"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - name: Move the submodules onto their rossi branches
+        # checkout restores the commit each submodule is pinned to.  .gitmodules
+        # tracks `rossi` for all three, so --remote advances them to the current
+        # branch tips.  Releases skip this and build the pins instead.
+        if: ${{ !inputs.pin-submodules }}
+        run: git submodule update --remote --recursive
+
+      - name: Report what is being built
+        run: git submodule foreach 'git log --oneline -1'
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Declare the JDK 21 toolchain
+        # The Rodin parent POM requires a maven-toolchains jdk/21 entry.  The
+        # template checked into org.rodinp.releng still says 17, so write our
+        # own rather than patching theirs.
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/toolchains.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <toolchains>
+            <toolchain>
+              <type>jdk</type>
+              <provides>
+                <version>21</version>
+                <vendor>openjdk</vendor>
+              </provides>
+              <configuration>
+                <jdkHome>${JAVA_HOME}</jdkHome>
+              </configuration>
+            </toolchain>
+          </toolchains>
+          EOF
+
+      - name: Cache the local Maven repository
+        uses: actions/cache@v6
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      - name: Build
+        # The UI test plug-ins need a display; xvfb-run supplies one.
+        # --fail-at-end so one broken module does not hide every later one;
+        # the build still fails, it just reports everything it could reach.
+        # forceContextQualifier pins the OSGi qualifier to the commit instead of
+        # a build timestamp.  Without it every run produces differently-named
+        # archives, so re-running a release adds a second set of assets rather
+        # than replacing the first -- gh's --clobber only matches on name.
+        run: |
+          xvfb-run -a mvn -B --fail-at-end ${MAVEN_MODULES} clean verify \
+            -DforceContextQualifier="$(git rev-parse --short HEAD)"
+
+      - name: Collect the release assets
+        run: |
+          mkdir -p artifacts
+          cp bundle/target/products/*.tar.gz bundle/target/products/*.zip artifacts/
+          (cd bundle/target/repository && zip -qr "$GITHUB_WORKSPACE/artifacts/rodin-bundle-update-site.zip" .)
+          ls -la artifacts
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: assets
+          path: artifacts/*
+          if-no-files-found: error
