@@ -38,7 +38,21 @@ jobs:
             exit 1
           fi
           tag_version="${BASH_REMATCH[1]}"
-          pom_version=$(sed -n 's|.*<version>\(.*\)-SNAPSHOT</version>.*|\1|p' bundle/pom.xml | head -1)
+          # Read the module's own <version>, falling back to the parent's the
+          # way Maven does.  Taking the first -SNAPSHOT in the file instead
+          # picks up the <parent> block, so it checks the wrong number as soon
+          # as the two diverge -- and finds nothing at all once the bundle
+          # version stops being a snapshot.
+          pom_version=$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+          root = ET.parse('bundle/pom.xml').getroot()
+          v = root.find('m:version', ns)
+          if v is None:
+              v = root.find('m:parent/m:version', ns)
+          print(v.text.strip().removesuffix('-SNAPSHOT'))
+          PY
+          )
           echo "tag says $tag_version, bundle/pom.xml says $pom_version"
           if [ "$tag_version" != "$pom_version" ]; then
             echo "Tag claims Rodin $tag_version but the bundle builds $pom_version." >&2
@@ -142,16 +156,30 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
+          # The tag regex admits -rcN.  A candidate is not what people should
+          # land on, so keep it out of "Latest" rather than publishing it as
+          # the current release.
+          extra=()
+          if [[ "$TAG" == *-rc* ]]; then
+            extra=(--prerelease --latest=false)
+          fi
           # This job deliberately does not check the repository out -- it only
           # needs the built artifacts -- so every gh call must name the repo.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG exists; replacing its assets."
             gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
+            # The notes carry a table of the feature versions this run built,
+            # so refresh them with the assets.  Uploading alone would leave
+            # text describing the build it just replaced.
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Rodin Bundle $TAG" \
+              --notes-file RELEASE_NOTES.md "${extra[@]}"
           else
             gh release create "$TAG" assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "Rodin Bundle $TAG" \
-              --notes-file RELEASE_NOTES.md
+              --notes-file RELEASE_NOTES.md "${extra[@]}"
           fi
 
   checksums:
