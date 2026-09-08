@@ -24,6 +24,8 @@
 		<module>rodin-b-sharp-smt</module>
 		<module>POCleaner</module>
 		<module>rossi-bridge</module>
+		<module>branding</module>
+		<module>branding-feature</module>
 		<module>bundle</module>
 		<module>updates</module>
 	</modules>

@@ -1,0 +1,8 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Rodin Bundle Branding
+Bundle-SymbolicName: org.eventb.rossi;singleton:=true
+Bundle-Version: 3.10.0.qualifier
+Bundle-Vendor: eventb-rossi
+Bundle-Localization: plugin
+Require-Bundle: org.rodinp.platform

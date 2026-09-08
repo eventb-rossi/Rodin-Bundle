@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension id="product" name="%productName" point="org.eclipse.core.runtime.products">
+      <product application="org.eclipse.ui.ide.workbench" name="%productName">
+         <property name="appName" value="Rodin"/>
+         <property name="preferenceCustomization" value="plugin_customization.ini"/>
+         <property name="aboutImage" value="icons/about.gif"/>
+         <property name="aboutText" value="%aboutText"/>
+         <property name="windowImages" value="icons/rodin16.gif,icons/rodin32.gif,icons/rodin48.gif,icons/rodin64.gif,icons/rodin128.gif,icons/rodin256.gif"/>
+         <property name="startupForegroundColor" value="000000"/>
+         <property name="startupMessageRect" value="7,177,445,20"/>
+         <property name="startupProgressRect" value="5,200,445,15"/>
+         <property name="applicationXMI" value="org.eclipse.platform/LegacyIDE.e4xmi"/>
+         <property name="cssTheme" value="org.eclipse.e4.ui.css.theme.e4_default"/>
+         <property name="applicationCSSResources" value="platform:/plugin/org.eclipse.platform/images/"/>
+      </product>
+   </extension>
+   <extension point="org.eclipse.ui.intro">
+      <introProductBinding introId="org.rodinp.platform.intro" productId="org.eventb.rossi.product"/>
+   </extension>
+</plugin>

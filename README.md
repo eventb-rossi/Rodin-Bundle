@@ -19,6 +19,10 @@ of six, and the usual case is a fraction of that.
 aimed at interactive proving: pressing the auto-prover button is bounded at
 about a second. Since a single interactive proof involves many such presses,
 this is the change the original author found most valuable in practice.
+The bundle selects this profile for interactive proving by default, and
+`Default Auto Tactic with SMT` for background proving. Existing workspace and
+project choices are preserved. Use *Restore Defaults* in Event-B → Sequent
+Prover → Auto/Post Tactic to adopt the bundle defaults in an existing workspace.
 
 **Eight more tactics in the profile editor** (Event-B → Sequent Prover →
 Auto/Post Tactic → Profiles), all wrappers around reasoners Rodin already has:
@@ -55,7 +59,10 @@ keeps to its file-mediated path.
 - **No SMT provers on Apple Silicon.** The bundled solver binaries are x86_64
   only. This is inherited from upstream: the official Rodin 3.10 release notes
   carry the same caveat. Apple Silicon users who need SMT should install the
-  Intel build and an Intel JVM.
+  Intel build and an Intel JVM under Rosetta. The native Apple Silicon bundle
+  includes the SMT integration and profiles, but no bundled solver entries;
+  the profiles still run their available non-SMT tactics. Its startup prover
+  check reports unavailable SMT tactics.
 - **The macOS build is not notarized.** After downloading, run
   `xattr -rc Rodin.app`.
 
@@ -102,6 +109,8 @@ remote so it can be rebased independently:
 | `POCleaner/` | ISP RAS, no upstream | `rossi` |
 | `rossi-bridge/` | [eventb-rossi/rossi-bridge](https://github.com/eventb-rossi/rossi-bridge), no upstream | `rossi` |
 
+`branding/` and `branding-feature/` register the bundle product and its defaults,
+reusing artwork and base preferences from Rodin core at build time.
 `bundle/` holds the product definition and `updates/` the add-on update
 site; everything builds in one Tycho reactor.
 
@@ -114,7 +123,8 @@ checked-in template still says 17).
 ```bash
 git clone --recurse-submodules https://github.com/eventb-rossi/Rodin-Bundle
 cd Rodin-Bundle
-mvn -pl '!rodincore/org.rodinp.platform.repository' clean verify
+mvn -pl '!rodincore/org.rodinp.platform.repository' clean verify \
+  -DforceContextQualifier=local
 ```
 
 Archives land in `bundle/target/products/`, the p2 update site in

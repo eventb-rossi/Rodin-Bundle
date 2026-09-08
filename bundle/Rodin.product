@@ -31,10 +31,10 @@
       startupMessageRect="7,177,445,20"
       startupForegroundColor="000000" />
    <launcher name="rodin">
-      <linux icon="org.rodinp.platform/rodin32.xpm"/>
-      <macosx icon="org.rodinp.platform/rodin.icns"/>
+      <linux icon="../rodincore/org.rodinp.platform/rodin32.xpm"/>
+      <macosx icon="../rodincore/org.rodinp.platform/rodin.icns"/>
       <win useIco="true">
-         <ico path="org.rodinp.platform/rodin.ico"/>
+         <ico path="../rodincore/org.rodinp.platform/rodin.ico"/>
          <bmp/>
       </win>
    </launcher>
@@ -48,6 +48,7 @@
    </plugins>
 
    <features>
+      <feature id="org.eventb.rossi.feature"/>
       <feature id="org.rodinp.platform"/>
       <feature id="org.eventb.ide"/>
       <feature id="org.rodinp.handbook.feature" installMode="root"/>

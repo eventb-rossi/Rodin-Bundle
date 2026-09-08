@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature id="org.eventb.rossi.feature" label="Rodin Bundle Branding"
+    version="3.10.0.qualifier" provider-name="eventb-rossi">
+   <description>Branding and proving defaults for the eventb-rossi Rodin bundle.</description>
+   <license url="https://www.eclipse.org/legal/epl-v10.html">Eclipse Public License 1.0</license>
+   <plugin id="org.eventb.rossi" version="0.0.0" download-size="0" install-size="0" unpack="false"/>
+</feature>

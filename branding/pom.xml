@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.eventb</groupId>
+        <artifactId>parent</artifactId>
+        <version>3.10.0-SNAPSHOT</version>
+        <relativePath>../rodincore/org.eventb.parent/pom.xml</relativePath>
+    </parent>
+    <groupId>org.eventb.rossi</groupId>
+    <artifactId>org.eventb.rossi</artifactId>
+    <version>3.10.0-SNAPSHOT</version>
+    <packaging>eclipse-plugin</packaging>
+    <name>Rodin Bundle Branding</name>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>assemble-branding-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <!-- Reuse upstream artwork, text and UI defaults without maintaining copies. -->
+                                <property name="rodin.platform" location="../rodincore/org.rodinp.platform"/>
+                                <property name="branding.output" location="${project.build.directory}/branding"/>
+                                <copy todir="${branding.output}">
+                                    <fileset dir="${rodin.platform}" includes="icons/**"/>
+                                </copy>
+                                <concat destfile="${branding.output}/plugin.properties" fixlastline="yes">
+                                    <filelist dir="${rodin.platform}" files="plugin.properties"/>
+                                    <filelist dir="${project.basedir}" files="plugin.properties"/>
+                                </concat>
+                                <echo file="${branding.output}/about.mappings" message="0=${unqualifiedVersion}.${buildQualifier}"/>
+                                <concat destfile="${branding.output}/plugin_customization.ini" fixlastline="yes">
+                                    <filelist dir="${rodin.platform}" files="plugin_customization.ini"/>
+                                    <filelist dir="${project.basedir}" files="plugin_customization.ini"/>
+                                </concat>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.eclipse.tycho</groupId>
+                <artifactId>tycho-packaging-plugin</artifactId>
+                <configuration>
+                    <additionalFileSets>
+                        <fileSet><directory>${project.build.directory}/branding</directory></fileSet>
+                    </additionalFileSets>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
