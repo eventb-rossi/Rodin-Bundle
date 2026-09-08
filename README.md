@@ -144,9 +144,11 @@ git tag v3.10.0-2609
 git push origin v3.10.0-2609
 ```
 
-The tag is `vX.Y.Z-YYMM`, where `X.Y.Z` is the Rodin version in the bundle and
-`YYMM` the build month, following the scheme `eventB-Soton/Rodin-Bundles` uses.
-The workflow rejects a tag whose version does not match `bundle/pom.xml`.
+The tag is `vX.Y.Z-YYMM[.N]`, where `X.Y.Z` is the Rodin version in the bundle
+and `YYMM` the build month, following the scheme `eventB-Soton/Rodin-Bundles`
+uses. A second release in the same month adds the serial `.N`, which that
+scheme has no room for. The workflow rejects a tag whose version does not match
+`bundle/pom.xml`.
 
 Each release carries the four product archives, the p2 update site as a zip, and
 `SHA256SUMS`. To re-attach assets to an existing tag, run the *Release* workflow

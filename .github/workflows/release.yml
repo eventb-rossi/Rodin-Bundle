@@ -33,8 +33,11 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-[0-9]{4}(-rc[0-9]+)?$ ]]; then
-            echo "Tag '$TAG' does not match vX.Y.Z-YYMM (optionally -rcN)." >&2
+          # The trailing .N is how a second release in one month is named:
+          # YYMM alone has no room for it.  BASH_REMATCH[1] is still the
+          # version, and the prerelease test below matches on -rc directly.
+          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-[0-9]{4}(\.[0-9]+)?(-rc[0-9]+)?$ ]]; then
+            echo "Tag '$TAG' does not match vX.Y.Z-YYMM[.N] (optionally -rcN)." >&2
             exit 1
           fi
           tag_version="${BASH_REMATCH[1]}"
