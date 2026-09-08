@@ -210,3 +210,31 @@ jobs:
           sha256sum "${archives[@]}" > SHA256SUMS
           cat SHA256SUMS
           gh release upload "$TAG" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+
+  pages:
+    name: Publish the add-ons update site
+    # After publish, so the site only ever advertises features that made it
+    # into a release.  A user installing from the URL therefore gets the last
+    # release rather than whatever rossi happens to be at.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: updates-site
+          path: site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5

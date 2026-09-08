@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<!--
+	    The add-on update site, published to GitHub Pages.
+
+	    Distinct from the repository bundle/ builds: that one also carries the
+	    Rodin platform and the product, so installing from it into an existing
+	    Rodin would offer a second copy of Rodin itself.  This site offers only
+	    add-on features, which is what someone running a stock Rodin wants.
+
+	    It deliberately omits org.eventb.smt.  Our SMT plug-in calls
+	    BasicTactics.firstSuccessful and looks up the tactic combinator
+	    org.eventb.core.seqprover.firstSuccessful, both ISP RAS additions that
+	    live only in our rodincore fork.  Stock Rodin ships
+	    org.eventb.core.seqprover under the same 3.8.0 version without them, so
+	    p2 would install the plug-in happily and it would then fail the first
+	    time the tactic ran.  SMT ships in the bundle, where the platform is
+	    ours.
+
+	    Building the remaining two here, in one module, is also what keeps the
+	    category tree single.  Each plug-in repository has its own site module
+	    with its own category id, both labelled "Event-B Tools"; Tycho
+	    qualifies category IU ids per build, so composing those sites shows the
+	    label twice.  One module, built once, cannot.
+	-->
+	<parent>
+		<groupId>org.eventb</groupId>
+		<artifactId>parent</artifactId>
+		<version>3.10.0-SNAPSHOT</version>
+		<relativePath>../rodincore/org.eventb.parent/pom.xml</relativePath>
+	</parent>
+
+	<groupId>org.eventb.rossi</groupId>
+	<artifactId>updates</artifactId>
+	<version>3.10.0-SNAPSHOT</version>
+	<packaging>eclipse-repository</packaging>
+
+	<name>Rodin Add-ons Update Site (eventb-rossi)</name>
+
+</project>

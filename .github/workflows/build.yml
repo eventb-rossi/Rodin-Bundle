@@ -103,3 +103,12 @@ jobs:
           name: assets
           path: artifacts/*
           if-no-files-found: error
+
+      # The add-on update site travels separately: release.yml deploys it to
+      # Pages rather than attaching it to the release, and it must stay a
+      # directory tree, not a zip, for upload-pages-artifact.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: updates-site
+          path: updates/target/repository
+          if-no-files-found: error

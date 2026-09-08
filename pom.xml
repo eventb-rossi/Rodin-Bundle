@@ -25,6 +25,7 @@
 		<module>POCleaner</module>
 		<module>rossi-bridge</module>
 		<module>bundle</module>
+		<module>updates</module>
 	</modules>
 
 </project>

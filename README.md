@@ -59,6 +59,37 @@ keeps to its file-mediated path.
 - **The macOS build is not notarized.** After downloading, run
   `xattr -rc Rodin.app`.
 
+## Installing into an existing Rodin
+
+The Proof Obligation Cleaner and the Rossi Bridge are ordinary Rodin plug-ins
+and install into a stock Rodin 3.10 from
+
+```
+https://eventb-rossi.github.io/Rodin-Bundle/
+```
+
+through *Help > Install New Software*, or from a shell with the p2 director:
+
+```sh
+java -jar <rodin>/plugins/org.eclipse.equinox.launcher_*.jar -nosplash \
+  -application org.eclipse.equinox.p2.director \
+  -repository https://eventb-rossi.github.io/Rodin-Bundle/ \
+  -installIU org.eventb.rossi.bridge.feature.feature.group \
+  -destination <rodin> -profile DefaultProfile
+```
+
+A Rodin installed from this bundle already carries that site in its repository
+list, so it can update the add-ons in place.
+
+The site does not offer the SMT plug-in, and cannot: it calls
+`BasicTactics.firstSuccessful`, which exists only in this bundle's Rodin, while
+stock Rodin ships `org.eventb.core.seqprover` under the same version without
+it. p2 would install the plug-in and it would fail the first time the tactic
+ran. The SMT work comes with the bundle.
+
+The site follows releases rather than `main`, so it offers the last released
+version of each add-on.
+
 ## Layout
 
 The four component repositories are submodules, each keeping its own `upstream`
@@ -71,7 +102,8 @@ remote so it can be rebased independently:
 | `POCleaner/` | ISP RAS, no upstream | `rossi` |
 | `rossi-bridge/` | [eventb-rossi/rossi-bridge](https://github.com/eventb-rossi/rossi-bridge), no upstream | `rossi` |
 
-`bundle/` holds the product definition; everything builds in one Tycho reactor.
+`bundle/` holds the product definition and `updates/` the add-on update
+site; everything builds in one Tycho reactor.
 
 ## Building
 

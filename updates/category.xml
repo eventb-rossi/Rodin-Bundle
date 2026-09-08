@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <!--
+       org.eventb.smt is deliberately absent: it needs API that only the
+       bundle's patched rodincore carries, under a version stock Rodin also
+       ships, so p2 could not refuse the install.  See ../README.md.
+   -->
+   <feature id="ru.ispras.eventb.pocleaner.feature">
+      <category name="org.eventb.rossi.tools"/>
+   </feature>
+   <feature id="org.eventb.rossi.bridge.feature">
+      <category name="org.eventb.rossi.tools"/>
+   </feature>
+   <category-def name="org.eventb.rossi.tools" label="Event-B Tools">
+      <description>
+         Tools for working with Event-B models.
+      </description>
+   </category-def>
+</site>
