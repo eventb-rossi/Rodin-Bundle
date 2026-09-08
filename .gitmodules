@@ -10,3 +10,7 @@
 	path = POCleaner
 	url = https://github.com/eventb-rossi/POCleaner.git
 	branch = rossi
+[submodule "rossi-bridge"]
+	path = rossi-bridge
+	url = https://github.com/eventb-rossi/rossi-bridge.git
+	branch = rossi

@@ -12,6 +12,9 @@
    <feature id="ru.ispras.eventb.pocleaner.feature">
       <category name="tools"/>
    </feature>
+   <feature id="org.eventb.rossi.bridge.feature">
+      <category name="tools"/>
+   </feature>
    <category-def name="rodin" label="Rodin Platform">
       <description>The Rodin platform for Event-B.</description>
    </category-def>

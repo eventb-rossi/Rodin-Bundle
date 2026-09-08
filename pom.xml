@@ -23,6 +23,7 @@
 		<module>rodincore</module>
 		<module>rodin-b-sharp-smt</module>
 		<module>POCleaner</module>
+		<module>rossi-bridge</module>
 		<module>bundle</module>
 	</modules>
 

@@ -53,6 +53,7 @@
       <feature id="org.rodinp.handbook.feature" installMode="root"/>
       <feature id="org.eventb.smt" installMode="root"/>
       <feature id="ru.ispras.eventb.pocleaner.feature" installMode="root"/>
+      <feature id="org.eventb.rossi.bridge.feature" installMode="root"/>
    </features>
 
    <configurations>

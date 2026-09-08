@@ -1,8 +1,9 @@
 # Rodin Bundle (eventb-rossi)
 
 A Rodin distribution built from the Rodin 3.10 platform plus two plug-ins that
-came out of work at ISP RAS: parallel and faster automatic proving, and a
-recovery tool for broken proof obligations.
+came out of work at ISP RAS (parallel and faster automatic proving, and a
+recovery tool for broken proof obligations), plus a bridge that lets the Rossi
+language server talk to a running Rodin.
 
 Windows, Linux and macOS (Intel and Apple Silicon) archives are published on the
 [releases page](../../releases).
@@ -41,6 +42,14 @@ the Event-B Explorer that drops the stored proof of the selected obligations.
 This is the way out when a proof is broken badly enough that Rodin throws when
 opening it.
 
+**Rossi Bridge.** Opens a loopback socket inside Rodin and publishes it as
+`<workspace>/.rossi-bridge/port`, so [Rossi](https://github.com/eventb-rossi/rossi)'s
+Event-B language server can reach the *running* instance instead of only
+writing files at it. It registers and reveals a project while Rodin holds the
+workspace, which otherwise needs `File > Import`, and refreshes a project
+after an external build. Nothing else changes: with the plug-in absent Rossi
+keeps to its file-mediated path.
+
 ## Caveats
 
 - **No SMT provers on Apple Silicon.** The bundled solver binaries are x86_64
@@ -52,7 +61,7 @@ opening it.
 
 ## Layout
 
-The three component repositories are submodules, each keeping its own `upstream`
+The four component repositories are submodules, each keeping its own `upstream`
 remote so it can be rebased independently:
 
 | Submodule | Upstream | Branch |
@@ -60,6 +69,7 @@ remote so it can be rebased independently:
 | `rodincore/` | [systerel/RodinCore](https://github.com/systerel/RodinCore) | `rossi` |
 | `rodin-b-sharp-smt/` | `git.code.sf.net/p/rodin-b-sharp/smt` | `rossi` |
 | `POCleaner/` | ISP RAS, no upstream | `rossi` |
+| `rossi-bridge/` | [eventb-rossi/rossi-bridge](https://github.com/eventb-rossi/rossi-bridge), no upstream | `rossi` |
 
 `bundle/` holds the product definition; everything builds in one Tycho reactor.
 

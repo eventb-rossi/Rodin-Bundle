@@ -61,11 +61,12 @@ jobs:
           # the features the product marks installMode="root" are roots at all.
           for iu in org.eventb.rossi.product \
                     org.eventb.smt.feature.group \
-                    ru.ispras.eventb.pocleaner.feature.feature.group; do
+                    ru.ispras.eventb.pocleaner.feature.feature.group \
+                    org.eventb.rossi.bridge.feature.feature.group; do
             grep -q "^$iu/" roots.txt || { echo "MISSING installed root: $iu"; exit 1; }
           done
           # The Rodin platform is pulled in by the product rather than being a
           # root of its own, so check it landed on disk instead.
           ls "$dest/features" | grep -q '^org\.rodinp\.platform_' \
             || { echo "MISSING feature: org.rodinp.platform"; exit 1; }
-          echo "product, SMT, POCleaner and the Rodin platform are all present"
+          echo "product, SMT, POCleaner, the bridge and the Rodin platform are all present"
