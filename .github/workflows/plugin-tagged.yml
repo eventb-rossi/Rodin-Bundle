@@ -1,0 +1,123 @@
+name: Plug-in tagged
+
+# Sent by a plug-in repository's release.yml when it is tagged.  The bundle is
+# what actually publishes the plug-ins, so a tag over there means one thing
+# here: build against it, then offer the pin bump for review.
+#
+# Deliberately not an automatic release.  release.yml refuses to publish while
+# any pin trails its rossi branch, so an auto-release racing an unmerged pin
+# bump would fail by design.  Merging the PR and tagging the bundle stays a
+# human step.
+
+on:
+  repository_dispatch:
+    types: [plugin-tagged]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-tagged-${{ github.event.client_payload.submodule }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Check the payload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+        # The payload comes from another repository, so nothing in it reaches a
+        # shell except through the environment, and the submodule has to be one
+        # this repository already tracks.
+        env:
+          SUBMODULE: ${{ github.event.client_payload.submodule }}
+          TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a vX.Y.Z tag."
+            exit 1
+          fi
+          path=$(git config -f .gitmodules "submodule.${SUBMODULE}.path" || true)
+          url=$(git config -f .gitmodules "submodule.${SUBMODULE}.url" || true)
+          if [ -z "$path" ] || [ -z "$url" ]; then
+            echo "::error::'$SUBMODULE' is not a submodule of this repository."
+            exit 1
+          fi
+          echo "$SUBMODULE is $path at $url"
+
+  build:
+    needs: guard
+    uses: ./.github/workflows/build.yml
+
+  pin:
+    name: Open the pin bump
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the pin branch
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Record the tagged commit and open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBMODULE: ${{ github.event.client_payload.submodule }}
+          TAG: ${{ github.event.client_payload.tag }}
+          CLAIMED: ${{ github.event.client_payload.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          path=$(git config -f .gitmodules "submodule.${SUBMODULE}.path")
+          url=$(git config -f .gitmodules "submodule.${SUBMODULE}.url")
+          # Resolve without cloning: the gitlink is just a sha in the index.
+          # An annotated tag also advertises a peeled ref, which is the commit.
+          refs=$(git ls-remote "$url" "refs/tags/${TAG}" "refs/tags/${TAG}^{}")
+          peeled=$(printf '%s\n' "$refs" | awk '/\^\{\}$/ {print $1}')
+          plain=$(printf '%s\n' "$refs" | awk '!/\^\{\}$/ {print $1}')
+          sha=${peeled:-$plain}
+          if [ -z "$sha" ]; then
+            echo "::error::$url has no tag $TAG."
+            exit 1
+          fi
+          if [ "$sha" != "$CLAIMED" ]; then
+            echo "::error::$TAG is $sha but the dispatch claimed $CLAIMED."
+            exit 1
+          fi
+          if [ "$sha" = "$(git rev-parse "HEAD:$path")" ]; then
+            echo "Already pinned at ${sha:0:12}; nothing to open."
+            exit 0
+          fi
+          git update-index --add --cacheinfo "160000,$sha,$path"
+
+          branch="pin/${SUBMODULE}-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -q -m "Pin ${SUBMODULE} at ${TAG}"
+          # checkout configures a narrow refspec, so the tracking ref for a
+          # branch a previous dispatch left behind has to be asked for by name
+          # before --force-with-lease has anything to compare against.
+          git fetch --quiet origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" || true
+          git push --force-with-lease origin "$branch"
+          if [ "$(gh pr view "$branch" --json state --jq .state 2>/dev/null || true)" = "OPEN" ]; then
+            echo "Pull request for $branch is already open; it now carries ${sha:0:12}."
+            exit 0
+          fi
+          # A pull request opened with GITHUB_TOKEN does not start workflow
+          # runs, so it will show no checks. The build that gates this step is
+          # what vouches for the reactor; link it rather than pretend.
+          gh pr create --base main --head "$branch" \
+            --title "Pin ${SUBMODULE} at ${TAG}" \
+            --body "$(printf '%s\n' \
+              "\`${SUBMODULE}\` was tagged \`${TAG}\` (\`${sha}\`)." \
+              "" \
+              "The bundle was built against the current \`rossi\` tips of every" \
+              "submodule before this was opened: ${RUN_URL}. That is the tag" \
+              "itself whenever the tag is the tip, which is the usual case." \
+              "" \
+              "This pull request carries no checks of its own, because a" \
+              "pull request opened with \`GITHUB_TOKEN\` does not start" \
+              "workflow runs.")"

@@ -1,0 +1,113 @@
+name: Upstream
+
+# Nobody notices when upstream moves.  systerel/RodinCore publishes no GitHub
+# releases and our forks are rebased onto upstream's branch rather than onto a
+# tag, so a tag watcher would see nothing: rodincore/rossi already sits months
+# past the RodinCore/3.10 tag.  Branch drift is the signal.
+#
+# The upstream map lives here rather than in .gitmodules.  git would keep a
+# custom submodule.<name>.upstream key perfectly well, but a static matrix
+# cannot read a file, so moving it costs a job that emits JSON for fromJSON.
+# Not worth it for two entries.  POCleaner and rossi-bridge have no upstream.
+
+on:
+  schedule:
+    # Monthly, on the first.
+    - cron: "17 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: ${{ matrix.submodule }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - submodule: rodincore
+            upstream: https://github.com/systerel/RodinCore.git
+            branch: master
+          - submodule: rodin-b-sharp-smt
+            upstream: https://git.code.sf.net/p/rodin-b-sharp/smt
+            branch: master
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Measure how far the fork trails upstream
+        id: measure
+        env:
+          SUBMODULE: ${{ matrix.submodule }}
+          UPSTREAM: ${{ matrix.upstream }}
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          set -euo pipefail
+          fork=$(git config -f .gitmodules "submodule.${SUBMODULE}.url")
+          ours=$(git config -f .gitmodules "submodule.${SUBMODULE}.branch")
+          # Only the commit graph is ever read, so ask for nothing else: the
+          # trees and blobs of these two repositories run to tens of megabytes
+          # that rev-list never looks at.  Both forks are on GitHub, which
+          # serves partial clones; the upstream fetch is filtered too, since
+          # that is where the volume is.
+          git clone --quiet --no-checkout --filter=tree:0 "$fork" fork
+          git -C fork remote add upstream "$UPSTREAM"
+          git -C fork fetch --quiet --filter=tree:0 --no-tags upstream "$BRANCH"
+          behind=$(git -C fork rev-list --count "origin/${ours}..FETCH_HEAD")
+          tip=$(git -C fork rev-parse --short FETCH_HEAD)
+          when=$(git -C fork log -1 --format=%cs FETCH_HEAD)
+          # owner/name as .gitmodules spells it, so a rename or an org move
+          # is picked up by the same file the clone above already trusted.
+          echo "fork=$(echo "$fork" | sed -E 's#\.git$##; s#^.*[:/]([^:/]+/[^/]+)$#\1#')" >> "$GITHUB_OUTPUT"
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "tip=$tip" >> "$GITHUB_OUTPUT"
+          echo "when=$when" >> "$GITHUB_OUTPUT"
+          echo "$SUBMODULE/$ours is $behind commits behind $UPSTREAM $BRANCH ($tip, $when)"
+
+      - name: File or update the drift issue
+        if: steps.measure.outputs.behind != '0'
+        env:
+          # A fine-grained token with Issues: write on the forks puts the issue
+          # where the rebase happens.  Without one the issue lands here, which
+          # still surfaces the drift rather than losing it.
+          FORK_TOKEN: ${{ secrets.SUBMODULE_ISSUE_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUBMODULE_ISSUE_TOKEN || github.token }}
+          SUBMODULE: ${{ matrix.submodule }}
+          UPSTREAM: ${{ matrix.upstream }}
+          BRANCH: ${{ matrix.branch }}
+          FORK: ${{ steps.measure.outputs.fork }}
+          BEHIND: ${{ steps.measure.outputs.behind }}
+          TIP: ${{ steps.measure.outputs.tip }}
+          WHEN: ${{ steps.measure.outputs.when }}
+        run: |
+          set -euo pipefail
+          if [ -n "$FORK_TOKEN" ]; then
+            target="$FORK"
+          else
+            target="$GITHUB_REPOSITORY"
+          fi
+          # One title for both targets.  Letting it depend on which repository
+          # the issue lands in would restart the dedup below the moment the
+          # token is added or removed.
+          title="Upstream drift: rebase ${SUBMODULE} onto ${BRANCH}"
+          body=$(printf '%s\n' \
+            "\`${UPSTREAM}\` \`${BRANCH}\` is at \`${TIP}\` (${WHEN})." \
+            "" \
+            "Our branch is **${BEHIND}** commits behind it." \
+            "" \
+            "Rebasing is a judgement call, not a chore: this issue only reports" \
+            "the gap.  Reported monthly by \`upstream.yml\` in Rodin-Bundle.")
+          # The title is deliberately constant so a repeat run comments rather
+          # than opening a second issue.
+          number=$(gh issue list --repo "$target" --state open \
+                     --search "\"$title\" in:title" \
+                     --json number,title \
+                     --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$target" --body "$body"
+            echo "Updated $target#$number"
+          else
+            gh issue create --repo "$target" --title "$title" --body "$body"
+          fi

@@ -143,6 +143,27 @@ Each release carries the four product archives, the p2 update site as a zip, and
 manually with that tag as its input; every upload uses `--clobber`, so re-runs
 replace rather than duplicate.
 
+### Releasing a plug-in
+
+Tagging a plug-in repository `vX.Y.Z` is how a version bump there becomes
+visible here. Its *Release* workflow sends a `repository_dispatch` to this
+repository, which builds the bundle against the new tip and opens a pull
+request bumping that submodule's pin. Merging it and tagging the bundle stay
+manual: the release workflow refuses to publish while a pin trails its branch,
+so an automatic release racing an unmerged pin bump would fail by design.
+
+The dispatch needs a repository secret `BUNDLE_DISPATCH_TOKEN` in each plug-in
+repository, a fine-grained token with `Contents: write` on this one.
+`GITHUB_TOKEN` cannot reach another repository.
+
+### Watching upstream
+
+`upstream.yml` runs monthly and reports how far `rodincore` and
+`rodin-b-sharp-smt` trail the branches they are rebased onto, opening or
+updating one issue per fork. Given the optional secret `SUBMODULE_ISSUE_TOKEN`,
+a fine-grained token with `Issues: write` on the forks, the issue lands in the
+fork; without it, here.
+
 ## Credits
 
 The proving work is by **Ilya Shchepetkov** and **Pavel Ivanov** at
