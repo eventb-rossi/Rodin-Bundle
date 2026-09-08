@@ -8,19 +8,29 @@ on:
 
 jobs:
   smoke:
-    name: Smoke test (${{ matrix.os }})
+    # Named by the archive rather than the runner: macos-latest is arm64 and
+    # runs both Apple Silicon archives, the x86_64 one under Rosetta.
+    name: Smoke test (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            pattern: "*linux.gtk.x86_64.tar.gz"
+            platform: linux.gtk.x86_64
           - os: windows-latest
-            pattern: "*win32.win32.x86_64.zip"
+            platform: win32.win32.x86_64
           - os: macos-latest
-            pattern: "*macosx.cocoa.x86_64.tar.gz"
+            platform: macosx.cocoa.x86_64
+          - os: macos-latest
+            platform: macosx.cocoa.aarch64
     steps:
+      # Only the product definition, which is what says who the roots are.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: bundle/Rodin.product
+          sparse-checkout-cone-mode: false
+
       - uses: actions/download-artifact@v8
         with:
           name: assets
@@ -35,7 +45,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive=$(ls assets/${{ matrix.pattern }})
+          # One archive per platform triple, so the extension need not be
+          # spelled out; the case below tells the two formats apart.
+          archive=$(ls assets/*${{ matrix.platform }}.*)
           echo "Unpacking $archive"
           mkdir -p rodin
           case "$archive" in
@@ -57,16 +69,24 @@ jobs:
                -application org.eclipse.equinox.p2.director \
                -destination "$dest" -listInstalledRoots > roots.txt
           cat roots.txt
-          # p2 roots carry the .feature.group suffix, and only the product and
-          # the features the product marks installMode="root" are roots at all.
-          for iu in org.eventb.rossi.product \
-                    org.eventb.smt.feature.group \
-                    ru.ispras.eventb.pocleaner.feature.feature.group \
-                    org.eventb.rossi.bridge.feature.feature.group; do
+          # The roots are the product plus the features it marks
+          # installMode="root", and p2 gives a feature the .feature.group
+          # suffix.  Derived from the product rather than listed here, so a
+          # root added there cannot ship untested: a hand-kept copy had
+          # already missed org.rodinp.handbook.feature.
+          {
+            grep -oE 'uid="[^"]+"' bundle/Rodin.product | head -1 \
+              | sed -E 's/uid="([^"]+)"/\1/'
+            grep -oE 'id="[^"]+" installMode="root"' bundle/Rodin.product \
+              | sed -E 's/id="([^"]+)".*/\1.feature.group/'
+          } > expected.txt
+          test -s expected.txt || { echo "no roots found in bundle/Rodin.product"; exit 1; }
+          cat expected.txt
+          while read -r iu; do
             grep -q "^$iu/" roots.txt || { echo "MISSING installed root: $iu"; exit 1; }
-          done
+          done < expected.txt
           # The Rodin platform is pulled in by the product rather than being a
           # root of its own, so check it landed on disk instead.
           ls "$dest/features" | grep -q '^org\.rodinp\.platform_' \
             || { echo "MISSING feature: org.rodinp.platform"; exit 1; }
-          echo "product, SMT, POCleaner, the bridge and the Rodin platform are all present"
+          echo "every product root and the Rodin platform are present"

@@ -126,6 +126,7 @@ jobs:
             echo "| Event-B IDE | \`$(version_of org.eventb.ide)\` |"
             echo "| SMT provers | \`$(version_of org.eventb.smt)\` |"
             echo "| Proof Obligation Cleaner | \`$(version_of ru.ispras.eventb.pocleaner.feature)\` |"
+            echo "| Rossi bridge | \`$(version_of org.eventb.rossi.bridge.feature)\` |"
             echo
             echo "### Before you install"
             echo
