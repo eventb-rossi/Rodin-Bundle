@@ -67,14 +67,11 @@ keeps to its file-mediated path.
 
 ## Caveats
 
-- **No SMT provers on Apple Silicon.** The bundled solver binaries are x86_64
-  only. This is inherited from upstream: the official Rodin 3.10 release notes
-  carry the same caveat. Apple Silicon users who need SMT should install the
-  Intel build and an Intel JVM under Rosetta. The native Apple Silicon bundle
-  includes the SMT integration and profiles, but no bundled solver entries;
-  the profiles still run their available non-SMT tactics. Its startup prover
-  check reports unavailable SMT tactics. ProB is unaffected: it animates and
-  disproves natively there.
+- **CVC3 and CVC4 need Rosetta 2 on Apple Silicon.** Z3 and veriT ship as
+  native arm64 builds. CVC3 2.4.1 and CVC4 1.5 are x86_64 only -- neither
+  builds for arm64 at the version the bundle pins -- and run under Rosetta 2,
+  so install it with `softwareupdate --install-rosetta` if you want those two.
+  Apple removes Rosetta 2 in macOS 28.
 - **The archives are large.** ProB ships a single plug-in carrying its `probcli`
   binaries for Linux, macOS and Windows at once, so every archive holds all
   three, roughly 75 MB, whichever platform it targets.
