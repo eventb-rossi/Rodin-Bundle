@@ -128,6 +128,7 @@ jobs:
             echo "| Rodin platform | \`$(version_of org.rodinp.platform)\` |"
             echo "| Event-B IDE | \`$(version_of org.eventb.ide)\` |"
             echo "| SMT provers | \`$(version_of org.eventb.smt)\` |"
+            echo "| ProB | \`$(version_of de.prob2.feature)\` |"
             echo "| Proof Obligation Cleaner | \`$(version_of ru.ispras.eventb.pocleaner.feature)\` |"
             echo "| Rossi bridge | \`$(version_of org.eventb.rossi.bridge.feature)\` |"
             echo

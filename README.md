@@ -41,6 +41,12 @@ both.
 **An empty-set axiom in the SMT translation**, which lets the solvers discharge
 some goals about empty sets that they previously could not.
 
+**ProB.** The animator and model checker from the HHU Düsseldorf STUPS group,
+bundled rather than left to its update site: *Start Animation* on a machine to
+explore its states, and the ProB disprover to hunt counterexamples for proof
+obligations no prover discharges. Its binaries are universal, so this is the one
+prover integration here that works natively on Apple Silicon.
+
 **Proof Obligation Cleaner.** Adds a *Clean Proof Obligation(s)* context menu to
 the Event-B Explorer that drops the stored proof of the selected obligations.
 This is the way out when a proof is broken badly enough that Rodin throws when
@@ -62,7 +68,11 @@ keeps to its file-mediated path.
   Intel build and an Intel JVM under Rosetta. The native Apple Silicon bundle
   includes the SMT integration and profiles, but no bundled solver entries;
   the profiles still run their available non-SMT tactics. Its startup prover
-  check reports unavailable SMT tactics.
+  check reports unavailable SMT tactics. ProB is unaffected: it animates and
+  disproves natively there.
+- **The archives are large.** ProB ships a single plug-in carrying its `probcli`
+  binaries for Linux, macOS and Windows at once, so every archive holds all
+  three, roughly 75 MB, whichever platform it targets.
 - **The macOS build is not notarized.** After downloading, run
   `xattr -rc Rodin.app`.
 
@@ -197,3 +207,11 @@ Rodin itself is developed by [Systerel](https://github.com/systerel/RodinCore)
 and the Event-B community; the SMT plug-in comes from the
 [rodin-b-sharp](https://sourceforge.net/p/rodin-b-sharp/smt/) project on
 SourceForge. Everything here is EPL.
+
+ProB is by **Michael Leuschel** and the [STUPS group](https://prob.hhu.de/w/) at
+HHU Düsseldorf, (C) 2000-2026, and is bundled unmodified under the EPL 1.0 from
+their release update site. Its sources are at
+[hhu-stups](https://github.com/hhu-stups), and the Prolog core's at
+<https://stups.hhu-hosting.de/downloads/prob/source/>. One restriction of theirs
+travels with it: ProB's nauty library for symmetry reduction may not be used for
+applications with nontrivial military significance.

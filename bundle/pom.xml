@@ -22,6 +22,33 @@
 		<bundle-suffix>rossi</bundle-suffix>
 	</properties>
 
+	<!--
+	    ProB is not built in this reactor, so its update site joins the target
+	    platform, and GEF with it: de.prob.ui requires org.eclipse.gef
+	    [3.11.0,4.0.0), which the Rodin parent's repositories (the Eclipse
+	    platform and the handbook) do not carry.  Declared here rather than in
+	    the parent so the rodincore fork stays untouched: Tycho resolves a
+	    target platform per module, and this is the module that assembles the
+	    product.
+	-->
+	<repositories>
+		<repository>
+			<id>prob</id>
+			<layout>p2</layout>
+			<url>https://stups.hhu-hosting.de/rodin/prob1/release/</url>
+		</repository>
+		<repository>
+			<!--
+			    GEF Classic, pinned: the legacy GEF 3.x site stops at
+			    org.eclipse.gef 3.10 and would not satisfy the range.
+			    3.29.0 carries org.eclipse.gef 3.26.100.
+			-->
+			<id>gef-classic</id>
+			<layout>p2</layout>
+			<url>https://download.eclipse.org/tools/gef/classic/release/3.29.0/</url>
+		</repository>
+	</repositories>
+
 	<build>
 		<plugins>
 			<plugin>

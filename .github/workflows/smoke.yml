@@ -90,3 +90,66 @@ jobs:
           ls "$dest/features" | grep -q '^org\.rodinp\.platform_' \
             || { echo "MISSING feature: org.rodinp.platform"; exit 1; }
           echo "every product root and the Rodin platform are present"
+
+      - name: Run the bundled ProB
+        # The director only proves the feature was installed.  It cannot tell a
+        # working binary from one built for the wrong architecture, so start the
+        # ProB CLI the way the plug-in does and require it to answer.
+        shell: bash
+        run: |
+          set -euo pipefail
+          launcher=$(find rodin -name 'org.eclipse.equinox.launcher_*.jar' | head -1)
+          test -n "$launcher" || { echo "no equinox launcher in the archive"; exit 1; }
+          plugins=$(dirname "$launcher")
+
+          # de.prob.core carries probcli for every platform at once.  The
+          # subdirectory names are the ones CliStarter.getOsInfo resolves; both
+          # macOS archives use the same universal binary under "macos".
+          case "${{ matrix.platform }}" in
+            linux.gtk.x86_64)     subdir=linux64   ; cli=probcli.sh  ;;
+            win32.win32.x86_64)   subdir=windows64 ; cli=probcli.exe ;;
+            macosx.cocoa.*)       subdir=macos     ; cli=probcli.sh  ;;
+            *) echo "unknown platform ${{ matrix.platform }}"; exit 1 ;;
+          esac
+
+          # The feature asks for de.prob.core unpacked, so the binaries
+          # normally sit on disk; fall back to the jar in case that changes.
+          src=$(echo "$plugins"/de.prob.core_*)
+          src=${src%% *}
+          test -e "$src" || { echo "no de.prob.core in $plugins"; exit 1; }
+          if [ -d "$src" ]; then
+            prob="$src/prob/$subdir"
+          else
+            work=$(mktemp -d)
+            unzip -qo "$src" -d "$work"
+            prob="$work/prob/$subdir"
+          fi
+          test -d "$prob" || { echo "no probcli directory $prob"; exit 1; }
+          # p2 does not preserve the executable bit; the plug-in sets it at
+          # startup, so the smoke test has to do the same.
+          chmod +x "$prob"/probcli* "$prob"/lib/send_user_interrupt* 2>/dev/null || true
+
+          # file(1) is not part of Git for Windows, hence the guard.
+          if command -v file > /dev/null; then
+            file "$prob"/probcli*
+            case "${{ matrix.platform }}" in
+              linux.gtk.x86_64)
+                file "$prob/probcli" | grep -q 'ELF 64-bit' \
+                  || { echo "probcli is not a 64-bit ELF binary"; exit 1; } ;;
+              macosx.cocoa.aarch64)
+                # ProB ships one universal binary for both macOS archives.  Lose
+                # the arm64 slice and Apple Silicon silently falls back to
+                # Rosetta, which is exactly the failure the solvers had.
+                file "$prob/probcli" | grep -q arm64 \
+                  || { echo "probcli has no arm64 slice"; exit 1; } ;;
+            esac
+          fi
+
+          # probcli finds its lib/ through PROB_HOME; without it the binary
+          # falls back to the working directory and dies loading its
+          # extensions.  CliStarter sets exactly this before launching.
+          out=$(PROB_HOME="$prob" "$prob/$cli" -version 2>&1 | tr -d '\r')
+          head -10 <<< "$out"
+          grep -q 'ProB Command Line Interface' <<< "$out" \
+            || { echo "MISSING version banner from probcli"; exit 1; }
+          echo "the bundled ProB runs on ${{ matrix.platform }}"

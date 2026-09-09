@@ -9,6 +9,15 @@
    <feature id="org.eventb.smt">
       <category name="provers"/>
    </feature>
+   <feature id="de.prob2.feature">
+      <category name="tools"/>
+   </feature>
+   <feature id="de.prob2.disprover.feature">
+      <category name="provers"/>
+   </feature>
+   <feature id="de.prob2.symbolic.feature">
+      <category name="tools"/>
+   </feature>
    <feature id="ru.ispras.eventb.pocleaner.feature">
       <category name="tools"/>
    </feature>
