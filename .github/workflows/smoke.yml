@@ -219,3 +219,115 @@ jobs:
           grep -q 'ProB Command Line Interface' <<< "$out" \
             || { echo "MISSING version banner from probcli"; exit 1; }
           echo "the bundled ProB runs on ${{ matrix.platform }}"
+
+      - name: Run every bundled solver
+        # The director only proves the fragments were installed.  It cannot tell
+        # a working binary from one built for the wrong architecture, which is
+        # how a 32-bit i386 CVC3 shipped in the linux/x86_64 product unnoticed.
+        # So actually execute each solver, with the argument vector the plug-in
+        # uses (language flags from SMTVersionArgs, the rest from each host
+        # plugin.xml), and require the right verdict.
+        shell: bash
+        run: |
+          set -euo pipefail
+          plugins=$(dirname "$(find rodin -name 'org.eclipse.equinox.launcher_*.jar' | head -1)")
+
+          cat > bench.smt2 <<'SMT'
+          (set-logic AUFLIA)
+          (declare-fun x () Int)
+          (declare-fun y () Int)
+          (assert (> x y))
+          (assert (not (>= x y)))
+          (check-sat)
+          SMT
+
+          case "${{ matrix.platform }}" in
+            linux.gtk.x86_64)     os=linux  ; arch=x86_64  ; exe=     ;;
+            win32.win32.x86_64)   os=win32  ; arch=x86_64  ; exe=.exe ;;
+            macosx.cocoa.x86_64)  os=macosx ; arch=x86_64  ; exe=     ;;
+            macosx.cocoa.aarch64) os=macosx ; arch=aarch64 ; exe=     ;;
+            *) echo "unknown platform ${{ matrix.platform }}"; exit 1 ;;
+          esac
+
+          # CVC3 and CVC4 ship x86_64 only for macOS, and the whole
+          # macosx.cocoa.x86_64 archive is Intel, so both macOS jobs run Intel
+          # binaries on an arm64 runner.  Rosetta 2 is not guaranteed to be
+          # present on the image, and without it every such binary dies with
+          # "Bad CPU type in executable".
+          if [ "$(uname -m)" = arm64 ] \
+             && [ ! -f /Library/Apple/usr/share/rosetta/rosetta ]; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+
+          run_solver() {
+            local name=$1 binname=$2; shift 2
+            local src work rel bin want info out
+            # The fragment ships as a jar, except cvc4.macosx, which is unpacked
+            # to a directory so its dylibs sit on disk beside the executable.
+            local -a candidates=("$plugins"/org.eventb.smt."$name"."$os"_*)
+            src=${candidates[0]}
+            test -e "$src" || { echo "no fragment org.eventb.smt.$name.$os in $plugins"; exit 1; }
+            work=$(mktemp -d)
+            if [ -d "$src" ]; then
+              cp -R "$src"/. "$work"/
+            else
+              unzip -qo "$src" -d "$work"
+            fi
+
+            # Resolve exactly the way Eclipse does: FindSupport.findOS tries
+            # os/<os>/<arch> then os/<os>, and on Apple Silicon
+            # BundledFileExtractor retries with $arch$ overridden to x86_64,
+            # which is the Rosetta 2 path.
+            if   [ -f "$work/os/$os/$arch/$binname$exe" ]; then rel=os/$os/$arch/$binname$exe
+            elif [ -f "$work/os/$os/$binname$exe" ];       then rel=os/$os/$binname$exe
+            elif [ "$os" = macosx ] && [ -f "$work/os/$os/x86_64/$binname$exe" ]; then
+              rel=os/$os/x86_64/$binname$exe
+            else
+              echo "no $binname$exe for $os/$arch inside $src"; exit 1
+            fi
+            bin=$work/$rel
+            chmod +x "$bin"
+            echo "--- $name: $rel"
+
+            # Z3 and veriT ship a native arm64 build.  If one goes missing the
+            # resolution above falls back to Rosetta, so without this the job
+            # would stay green while the release notes' claim went stale.
+            if [ "$os/$arch" = macosx/aarch64 ] && [[ $rel != os/macosx/aarch64/* ]]; then
+              case $name in
+                verit|z3) echo "$name must ship a native aarch64 binary, got $rel"; exit 1 ;;
+              esac
+            fi
+
+            # A statically linked 32-bit binary runs happily on a 64-bit Linux
+            # runner, so executing it is not enough to catch the i386 CVC3 that
+            # once shipped in the linux/x86_64 product: check the word size too.
+            # On macOS the same check catches an os/macosx/<arch> directory
+            # holding a binary built for the other architecture.  file(1) is not
+            # part of Git for Windows, hence the guard.
+            case "$rel" in
+              os/linux/*)          want='ELF 64-bit' ;;
+              os/macosx/aarch64/*) want='Mach-O 64-bit executable arm64' ;;
+              os/macosx/x86_64/*)  want='Mach-O 64-bit executable x86_64' ;;
+              *)                   want= ;;
+            esac
+            if [ -n "$want" ] && command -v file > /dev/null; then
+              info=$(file "$bin")
+              echo "$info"
+              [[ $info == *"$want"* ]] || { echo "$rel is not $want"; exit 1; }
+            fi
+
+            # No pipelines on "$out": veriT prints its whole proof under
+            # --proof=-, and once that outgrows the pipe buffer the writer takes
+            # SIGPIPE, which pipefail would report as a failure of the solver.
+            out=$("$bin" "$@" bench.smt2 2>&1 | tr -d '\r') || true
+            head -20 <<< "$out"
+            grep -qx unsat <<< "$out" || { echo "MISSING unsat from $name"; exit 1; }
+            echo "$name: unsat"
+          }
+
+          run_solver cvc3  cvc3  -lang smt2
+          run_solver cvc4  cvc4  --lang smt2 --finite-model-find --fmf-inst-engine
+          run_solver verit veriT -i smtlib2 --disable-print-success --disable-banner \
+                                 --proof=- --proof-version=1 --proof-prune
+          run_solver z3    z3    -smt2
+          echo "every bundled solver runs on ${{ matrix.platform }} and answers unsat"
