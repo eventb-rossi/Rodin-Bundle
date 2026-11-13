@@ -5,6 +5,21 @@ name: Smoke
 # the operating system they target.
 on:
   workflow_call:
+    inputs:
+      assets-artifact:
+        description: >-
+          Name of the build artifact holding the archives.  Releases pass the
+          signed set; CI leaves the default so it tests what the build made.
+        required: false
+        type: string
+        default: assets
+      signed:
+        description: >-
+          Whether those archives are signed and notarized, which turns on the
+          macOS Gatekeeper assertions below.
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   smoke:
@@ -33,7 +48,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: assets
+          name: ${{ inputs.assets-artifact }}
           path: assets
 
       - uses: actions/setup-java@v6
@@ -50,10 +65,43 @@ jobs:
           archive=$(ls assets/*${{ matrix.platform }}.*)
           echo "Unpacking $archive"
           mkdir -p rodin
+          # A signed macOS archive is only worth testing the way a user
+          # receives it.  Both halves of that matter: the quarantine bit is
+          # what makes Gatekeeper evaluate the app at all -- downloading
+          # through the artifact API sets nothing -- and ditto is the unpacker
+          # Archive Utility and Homebrew use.
+          if [ "${{ inputs.signed }}" = true ] && [ "$RUNNER_OS" = macOS ]; then
+            xattr -w com.apple.quarantine \
+              "0081;$(printf '%x' "$(date +%s)");Safari;$(uuidgen)" "$archive"
+          fi
           case "$archive" in
-            *.zip)    unzip -q "$archive" -d rodin ;;
+            *.zip)
+              if [ "$RUNNER_OS" = macOS ]; then
+                ditto -x -k "$archive" rodin
+              else
+                unzip -q "$archive" -d rodin
+              fi ;;
             *.tar.gz) tar xzf "$archive" -C rodin ;;
           esac
+
+      - name: Assert macOS accepts the signed bundle
+        # The whole point of signing: an app the user actually downloaded
+        # opens after macOS's usual one-time "downloaded from the Internet"
+        # confirmation, with no malware warning and no trip to System
+        # Settings.  Runs before the functional checks because a bundle
+        # Gatekeeper rejects is broken whatever else it can do.
+        if: ${{ inputs.signed && startsWith(matrix.os, 'macos') }}
+        run: |
+          set -euo pipefail
+          app=$(find rodin -maxdepth 1 -name '*.app' | head -1)
+          test -n "$app" || { echo "no .app at the root of the archive"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv --verbose=4 "$app" 2>&1 | grep -E 'Authority|TeamIdentifier|flags='
+          # A stapled ticket is what makes the app open on a machine that
+          # cannot reach Apple; spctl is the check Gatekeeper itself performs.
+          xcrun stapler validate "$app"
+          spctl -a -t exec -vvv "$app"
+          echo "Gatekeeper accepts the ${{ matrix.platform }} bundle"
 
       - name: Assert the bundle really contains our features
         # Runs the p2 director against the unpacked product and checks that the
@@ -64,8 +112,15 @@ jobs:
           set -euo pipefail
           launcher=$(find rodin -name 'org.eclipse.equinox.launcher_*.jar' | head -1)
           test -n "$launcher" || { echo "no equinox launcher in the archive"; exit 1; }
-          dest=$(dirname "$(dirname "$launcher")")
-          java -jar "$launcher" -nosplash \
+          # The director writes into the product it inspects -- its OSGi
+          # configuration, and a lock in the p2 profile even just to list --
+          # so it gets a copy.  A write breaks a signed bundle's seal, after
+          # which Gatekeeper calls the app damaged and runs nothing in it, and
+          # once Gatekeeper has checked a bundle macOS refuses other apps'
+          # writes to it anyway.
+          dest="$RUNNER_TEMP/director"
+          cp -R "$(dirname "$(dirname "$launcher")")" "$dest"
+          java -jar "$dest/plugins/$(basename "$launcher")" -nosplash \
                -application org.eclipse.equinox.p2.director \
                -destination "$dest" -listInstalledRoots > roots.txt
           cat roots.txt
@@ -125,8 +180,19 @@ jobs:
             prob="$work/prob/$subdir"
           fi
           test -d "$prob" || { echo "no probcli directory $prob"; exit 1; }
+          # The macOS zips come out of sign-and-notarize.sh, which ships these
+          # bits set: a quarantined app runs from a read-only translocated
+          # copy, where the plug-in's own chmod fails and ProB never starts.
+          # Check them before the chmod below papers over a regression.
+          if [ -d "$src" ] && ls assets/*"${{ matrix.platform }}".zip > /dev/null 2>&1 \
+             && [ "$RUNNER_OS" = macOS ]; then
+            for f in "$prob/probcli.sh" "$prob/probcli" "$prob/lib/send_user_interrupt"; do
+              [ -x "$f" ] || { echo "not executable as shipped: $f"; exit 1; }
+            done
+            echo "probcli and its helpers are executable as shipped"
+          fi
           # p2 does not preserve the executable bit; the plug-in sets it at
-          # startup, so the smoke test has to do the same.
+          # startup, so the smoke test has to do the same for Tycho's archives.
           chmod +x "$prob"/probcli* "$prob"/lib/send_user_interrupt* 2>/dev/null || true
 
           # file(1) is not part of Git for Windows, hence the guard.

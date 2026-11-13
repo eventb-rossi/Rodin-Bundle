@@ -1,0 +1,185 @@
+name: Sign macOS
+
+# Signs, notarizes and staples the two macOS archives, and re-emits every
+# release asset as `assets-signed`.
+#
+# This is the only job that runs on macOS in the release path.  Tycho
+# materializes all four platforms on Linux, but codesign, notarytool and
+# stapler exist nowhere else, so the macOS archives are converted here --
+# including the change of format: notarytool accepts zip, dmg or pkg and never
+# a tarball, and a tarball cannot carry a staple.
+#
+# Without the signing secrets the job still repairs the bundle and re-emits
+# it as a zip, signed ad hoc and not notarized, so a fork can cut a release
+# without inheriting our identity.  The archive format then depends only on
+# the platform, never on which secrets a repository holds.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          The commit, branch or tag to take the signing assets from.  A
+          release rebuilt from an older tag has to sign with that tag's
+          script, entitlements and Info.plist template, not with whatever the
+          default branch holds now.
+        required: false
+        type: string
+        default: ''
+    outputs:
+      signed:
+        description: >-
+          Whether the macOS archives really were signed.  False when the
+          signing secrets are absent, so callers do not assert Gatekeeper
+          acceptance on an ad-hoc signature.
+        value: ${{ jobs.sign.outputs.signed }}
+
+jobs:
+  sign:
+    name: Sign and notarize
+    outputs:
+      signed: ${{ steps.creds.outputs.signing }}
+    # One job rather than a matrix over the two archives: notarization is the
+    # slow part but the keychain setup is the delicate part, and doing it once
+    # keeps the private key in exactly one place.
+    runs-on: macos-latest
+    # sign-and-notarize.sh waits up to five hours for Apple, on both archives
+    # at once, and signing and uploading come on top.  That leaves 20 minutes
+    # of GitHub's six-hour limit for a hang elsewhere, such as codesign
+    # blocking on a keychain prompt nobody can answer.
+    timeout-minutes: 340
+    steps:
+      # Only the signing assets; the product itself arrives as an artifact.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: bundle/macos
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: assets
+          path: assets
+
+      - name: Decide whether this run can sign
+        id: creds
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          KEY_P8: ${{ secrets.AC_API_KEY_P8_BASE64 }}
+          KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          IDENTITY: ${{ vars.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          # Secrets cannot be tested in a job-level `if`, so the decision is a
+          # step output that every later step keys off.  All five are required
+          # together: signing with a certificate but no notary credentials
+          # would only fail inside notarytool, an hour into the release.
+          missing=
+          [ -n "$CERT" ]      || missing="$missing MACOS_CERT_P12_BASE64"
+          [ -n "$KEY_P8" ]    || missing="$missing AC_API_KEY_P8_BASE64"
+          [ -n "$KEY_ID" ]    || missing="$missing AC_API_KEY_ID"
+          [ -n "$ISSUER_ID" ] || missing="$missing AC_API_ISSUER_ID"
+          [ -n "$IDENTITY" ]  || missing="$missing MACOS_SIGN_IDENTITY"
+          if [ -z "$missing" ]; then
+            echo "signing=true" >> "$GITHUB_OUTPUT"
+          elif [ -z "$CERT" ]; then
+            echo "signing=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::no signing credentials ($missing ); the macOS archives get an ad-hoc signature and no notarization"
+          else
+            # A half-configured repository is a mistake, not a fork: fail loudly
+            # rather than quietly publishing an unnotarized release.
+            echo "::error::MACOS_CERT_P12_BASE64 is set but these are not:$missing"
+            exit 1
+          fi
+
+      - name: Import the Developer ID certificate
+        if: steps.creds.outputs.signing == 'true'
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # A throwaway keychain, never the login one: the runner is disposable
+          # but the habit matters, and an unlocked login keychain would let any
+          # later step sign with our identity.
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          security create-keychain -p "$password" "$keychain"
+          # Default settings lock the keychain after five minutes of idle time,
+          # which is well inside a notarization wait.
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" \
+            -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          # Without this codesign blocks on a GUI prompt for the key that
+          # never appears on a runner, and the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" > /dev/null
+          # Prepend rather than replace: dropping the login keychain from the
+          # search list breaks anything later that expects the runner default.
+          existing=$(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')
+          # shellcheck disable=SC2086 # runner keychain paths contain no spaces
+          security list-keychains -d user -s "$keychain" $existing
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Sign, notarize and staple the macOS archives
+        env:
+          SIGNING: ${{ steps.creds.outputs.signing }}
+          MACOS_SIGN_IDENTITY: ${{ vars.MACOS_SIGN_IDENTITY }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ "$SIGNING" = true ]; then
+            : "${MACOS_SIGN_IDENTITY:?set the MACOS_SIGN_IDENTITY repository variable}"
+            export AC_API_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+            printf '%s' "$AC_API_KEY_P8" | base64 --decode > "$AC_API_KEY_PATH"
+          else
+            export MACOS_SIGN_IDENTITY=- SKIP_NOTARIZE=1
+          fi
+
+          # A release with no macOS archive to sign is a broken build, not a
+          # reason to publish the other three platforms and move on.
+          set -- assets/rodin-*-macosx.cocoa.*.tar.gz
+          [ $# -gt 0 ] || { echo "no macOS archives in assets/"; exit 1; }
+
+          # Both archives at once: the notarization wait is on Apple, not on
+          # the runner, so the two round-trips overlap instead of adding up.
+          # Output streams as it comes, each line tagged with its architecture:
+          # a wait of hours then shows where it stands, and a job killed by
+          # its timeout has still printed the submission ids.
+          pids=
+          for archive; do
+            tag=${archive##*.cocoa.}; tag=${tag%.tar.gz}
+            ( bundle/macos/sign-and-notarize.sh "$archive" assets 2>&1 \
+                | sed -l "s/^/[$tag] /"; exit "${PIPESTATUS[0]}" ) &
+            pids="$pids $!"
+          done
+          failed=0
+          for pid in $pids; do wait "$pid" || failed=1; done
+          [ "$failed" -eq 0 ]
+
+          # The tarballs are replaced, not kept alongside: two macOS archives
+          # per architecture would leave users a choice where one of the
+          # options is the one Gatekeeper rejects.
+          rm -f "$@"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: assets-signed
+          path: assets/*
+          if-no-files-found: error
+
+      - name: Remove the signing credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/cert.p12"
+          if [ -n "${KEYCHAIN:-}" ] && [ -f "$KEYCHAIN" ]; then
+            security delete-keychain "$KEYCHAIN"
+          fi

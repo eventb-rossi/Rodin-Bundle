@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>rodin</string>
+	<key>CFBundleIdentifier</key>
+	<string>@BUNDLE_ID@</string>
+	<key>CFBundleName</key>
+	<string>Rodin</string>
+	<key>CFBundleDisplayName</key>
+	<string>Rodin Platform</string>
+	<key>CFBundleIconFile</key>
+	<string>rodin.icns</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@SHORT_VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@BUNDLE_VERSION@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Upstream Eclipse pins the app to the light appearance.  Keep that:
+	     Rodin's editor and prover colours are chosen against a light
+	     background, so following the system theme makes them unreadable. -->
+	<key>NSRequiresAquaSystemAppearance</key>
+	<true/>
+	<!-- Read by the launcher, not by macOS: the Equinox executable passes
+	     these through as command-line arguments. -->
+	<key>Eclipse</key>
+	<array>
+		<string>-keyring</string>
+		<string>~/.eclipse_keyring</string>
+	</array>
+</dict>
+</plist>

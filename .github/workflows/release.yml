@@ -92,25 +92,47 @@ jobs:
       ref: ${{ inputs.tag || github.ref_name }}
       pin-submodules: true
 
-  smoke:
+  sign:
     needs: build
+    # Before smoke, so the archives the smoke test exercises are byte for byte
+    # the ones the release serves.  Signing afterwards would leave the tested
+    # artifact and the published artifact different files.
+    uses: ./.github/workflows/sign-macos.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit
+
+  smoke:
+    needs: sign
     uses: ./.github/workflows/smoke.yml
+    with:
+      assets-artifact: assets-signed
+      # False when the signing secrets are missing: the archives then carry an
+      # ad-hoc signature, and asserting Gatekeeper on those would fail a
+      # release that never claimed to be notarized.
+      signed: ${{ needs.sign.outputs.signed == 'true' }}
 
   publish:
     name: Publish release
-    needs: smoke
+    # `sign` as well as `smoke`, because the notes below have to say what the
+    # macOS archives actually are: a run without the signing secrets ships an
+    # ad-hoc signature and must not claim a notarized one.
+    needs: [sign, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release and upload its assets
+      id-token: write # sign the provenance attestations
+      attestations: write # record them against this repository
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: assets
+          name: assets-signed
           path: assets
 
       - name: Write the release notes header
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
+          SIGNED: ${{ needs.sign.outputs.signed }}
         run: |
           set -euo pipefail
           # The built update site names every feature <id>_<version>.jar, so the
@@ -147,8 +169,22 @@ jobs:
             echo "  non-SMT tactics and the startup check reports the unavailable ones."
             echo "  For solvers, run the \`macosx.cocoa.x86_64\` build with an Intel JVM"
             echo "  under Rosetta."
-            echo "- The macOS build is not notarized. After downloading, run"
-            echo "  \`xattr -rc Rodin.app\`."
+            if [ "$SIGNED" = true ]; then
+              echo "- The macOS archives are signed with a Developer ID certificate,"
+              echo "  notarized by Apple and stapled, so they open with no Gatekeeper"
+              echo "  prompt and no \`xattr\` incantation. They ship as \`.zip\`:"
+              echo "  Apple's notary service does not accept a tarball, and a tarball"
+              echo "  cannot carry the notarization ticket."
+            else
+              echo "- **The macOS archives are not notarized.** This build had no signing"
+              echo "  certificate, so they carry an ad-hoc signature only. After"
+              echo "  downloading, run \`xattr -rc rodin.app\`. They still ship as"
+              echo "  \`.zip\` so the format never depends on which secrets a"
+              echo "  repository holds."
+            fi
+            echo "- Every product archive and the update site carry a build provenance"
+            echo "  attestation. Verify one with"
+            echo "  \`gh attestation verify --repo $GITHUB_REPOSITORY <file>\`."
             echo "- \`SHA256SUMS\` is attached; verify with \`sha256sum -c SHA256SUMS\`."
             echo
           } > RELEASE_NOTES.md
@@ -180,6 +216,23 @@ jobs:
           # needs the built artifacts -- so every gh call must name the repo.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG exists; replacing its assets."
+            # --clobber only replaces an asset of the same name.  The macOS
+            # archives changed format from .tar.gz to .zip, so a re-release of
+            # a tag cut before that would otherwise keep serving the old
+            # tarball beside the new zip -- and the tarball is the one
+            # Gatekeeper rejects.  Drop anything the new set does not cover.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq '.assets[].name' > published.txt
+            while IFS= read -r name; do
+              [ -n "$name" ] || continue
+              # SHA256SUMS is attached by a later job, so it is never in
+              # assets/ and must not be taken for a leftover.
+              [ -e "assets/$name" ] || [ "$name" = SHA256SUMS ] || {
+                echo "Deleting stale asset $name"
+                gh release delete-asset "$TAG" "$name" --yes \
+                  --repo "$GITHUB_REPOSITORY"
+              }
+            done < published.txt
             gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
             # The notes carry a table of the feature versions this run built,
             # so refresh them with the assets.  Uploading alone would leave
@@ -194,6 +247,15 @@ jobs:
               --title "Rodin Bundle $TAG" \
               --notes-file RELEASE_NOTES.md "${extra[@]}"
           fi
+
+      - name: Attest the published assets
+        # After the upload, so the attested digests are the bytes the release
+        # serves.  Together with notarization this covers both questions a user
+        # can ask: Apple vouches that the app is safe to run, and this vouches
+        # for which workflow run built it.
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: assets/*
 
   checksums:
     name: SHA256SUMS
