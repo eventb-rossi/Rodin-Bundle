@@ -169,8 +169,9 @@ jobs:
             echo "  \`macosx.cocoa.aarch64\` build no longer needs an Intel JVM to prove."
             if [ "$SIGNED" = true ]; then
               echo "- The macOS archives are signed with a Developer ID certificate,"
-              echo "  notarized by Apple and stapled, so they open with no Gatekeeper"
-              echo "  prompt and no \`xattr\` incantation. They ship as \`.zip\`:"
+              echo "  notarized by Apple and stapled: the first launch shows only macOS's"
+              echo "  usual question about an app downloaded from the Internet, and no"
+              echo "  \`xattr\` incantation is needed. They ship as \`.zip\`:"
               echo "  Apple's notary service does not accept a tarball, and a tarball"
               echo "  cannot carry the notarization ticket."
             else
