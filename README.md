@@ -108,8 +108,8 @@ stock Rodin ships `org.eventb.core.seqprover` under the same version without
 it. p2 would install the plug-in and it would fail the first time the tactic
 ran. The SMT work comes with the bundle.
 
-The site follows releases rather than `main`, so it offers the last released
-version of each add-on.
+The site follows releases, neither `main` nor `-rc` candidates, so it offers
+the last released version of each add-on.
 
 ## Layout
 

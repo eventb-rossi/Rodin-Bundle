@@ -289,8 +289,11 @@ jobs:
     name: Publish the add-ons update site
     # After publish, so the site only ever advertises features that made it
     # into a release.  A user installing from the URL therefore gets the last
-    # release rather than whatever rossi happens to be at.
+    # release rather than whatever rossi happens to be at -- and not a release
+    # candidate, which is published as a prerelease precisely so that nobody
+    # gets it without asking.
     needs: publish
+    if: ${{ !contains(inputs.tag || github.ref_name, '-rc') }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
