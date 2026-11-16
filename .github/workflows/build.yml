@@ -107,9 +107,18 @@ jobs:
         # a build timestamp.  Without it every run produces differently-named
         # archives, so re-running a release adds a second set of assets rather
         # than replacing the first -- gh's --clobber only matches on name.
+        #
+        # The commit's date leads, as in upstream Rodin's qualifiers, because
+        # p2 tells which of two same-version features is newer by comparing
+        # their qualifiers as strings.  A bare hash is newer than the last one
+        # only by chance, and an add-on whose hash sorts lower than the one a
+        # user has is never offered to them as an update.
         run: |
+          qualifier="$(TZ=UTC0 git log -1 --date=format-local:%Y%m%d%H%M --format=%cd)"
+          qualifier="$qualifier-$(git rev-parse --short HEAD)"
+          echo "OSGi qualifier: $qualifier"
           xvfb-run -a mvn -B --fail-at-end ${MAVEN_MODULES} clean verify \
-            -DforceContextQualifier="$(git rev-parse --short HEAD)"
+            -DforceContextQualifier="$qualifier"
 
       - name: Collect the release assets
         run: |
