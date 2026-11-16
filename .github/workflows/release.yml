@@ -194,8 +194,26 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
+          # Name the previous release rather than letting GitHub pick one: it
+          # takes the latest prerelease too, so v3.10.0-2611 went out compared
+          # against its own -rc1, a one-commit changelog.  The previous release
+          # is the last real one below this tag in version order (candidates
+          # compare from their final tag); a rebuilt old tag thus keeps its
+          # own range.
+          final=${TAG%%-rc*}
+          previous=$(
+            { gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts \
+                --exclude-pre-releases --limit 1000 --json tagName --jq '.[].tagName'
+              printf '%s\n' "$final"
+            } | sort -V -u | awk -v t="$final" '$0 == t { print prev } { prev = $0 }'
+          )
+          range=(-f tag_name="$TAG")
+          if [ -n "$previous" ]; then
+            echo "changelog since $previous"
+            range+=(-f previous_tag_name="$previous")
+          fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$TAG" --jq .body >> RELEASE_NOTES.md
+            "${range[@]}" --jq .body >> RELEASE_NOTES.md
           cat RELEASE_NOTES.md
 
       - name: Create or update the release
