@@ -333,3 +333,27 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v5
+
+  notify-downstream:
+    name: Notify the packaging repos
+    # Tell the eventb-rossi packaging repos (Homebrew, Scoop, APT, COPR,
+    # Gentoo) that a release is out, so their version checks run now rather
+    # than at the next daily cron.  They package `rodin` from these releases
+    # and `rodin-rc` from the newest release or candidate, so candidates
+    # notify too.
+    #
+    # After `checksums`, so a packager never sees a release without its
+    # SHA256SUMS: the version checks skip such a release as incomplete.  Tag
+    # pushes only: a workflow_dispatch rebuild keeps the version, so there is
+    # nothing new to detect.  This has to be a job here rather than a
+    # `release:` listener elsewhere, because a release created with
+    # GITHUB_TOKEN triggers no further workflow runs.  See
+    # eventb-rossi/release-automation for the reusable workflow.
+    needs: checksums
+    if: github.event_name == 'push'
+    uses: eventb-rossi/release-automation/.github/workflows/notify-downstream.yml@main
+    with:
+      tool: rodin
+      version: ${{ github.ref_name }}
+    secrets:
+      dispatch-token: ${{ secrets.VERSION_BUMP_TOKEN }}
