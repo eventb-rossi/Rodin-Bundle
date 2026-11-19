@@ -211,6 +211,55 @@ jobs:
             esac
           fi
 
+          # ProB's macOS binaries must arrive signed by their own developers,
+          # by the test vendor_signed applies in bundle/macos/sign-and-notarize.sh;
+          # README.md, "Signing the macOS archives", says why.  ProB 3.2.3
+          # (November 2026) arrived unsigned.  Every slice is checked, since
+          # codesign -d describes only the host's, and on a signed release the
+          # signer must be a team other than the app's: that is how a binary
+          # the script re-signed shows up here.
+          if [ "$RUNNER_OS" = macOS ]; then
+            ours=
+            if [ "${{ inputs.signed }}" = true ]; then
+              app=$(find rodin -maxdepth 1 -name '*.app' | head -1)
+              ours=$(codesign -dv "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+              test -n "$ours" || { echo "no TeamIdentifier on $app"; exit 1; }
+            fi
+            # The Mach-O test of macho_files_under in the signing script.
+            machos=$(find "$prob" -type f -print0 | xargs -0 file \
+              | grep '^[^:]*: *Mach-O' | cut -d: -f1 || true)
+            grep -qxF "$prob/probcli" <<< "$machos" \
+              || { echo "probcli is not among ProB's Mach-O files"; exit 1; }
+            bad=''
+            while IFS= read -r f; do
+              archs=$(lipo -archs "$f")
+              test -n "$archs" || { echo "lipo lists no architectures in $f"; exit 1; }
+              for a in $archs; do
+                info=$(codesign -dvv --architecture "$a" "$f" 2>&1) || true
+                if ! grep -q '^Authority=Developer ID Application: ' <<< "$info"; then
+                  why="no Developer ID signature"
+                elif ! grep -q '^Timestamp=' <<< "$info"; then
+                  why="no secure timestamp"
+                elif ! grep -qE '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime' <<< "$info"; then
+                  why="no hardened runtime"
+                elif ! codesign --verify --strict --architecture "$a" "$f" 2> /dev/null; then
+                  why="signature does not verify"
+                elif [ -n "$ours" ] && grep -qxF "TeamIdentifier=$ours" <<< "$info"; then
+                  why="signed by our own team $ours"
+                else
+                  continue
+                fi
+                bad="$bad  ${f#"$prob"/} ($a): $why"$'\n'
+              done
+            done <<< "$machos"
+            if [ -n "$bad" ]; then
+              printf '%s' "$bad"
+              echo "ProB's macOS binaries must carry their developers' own Developer ID signature"
+              exit 1
+            fi
+            echo "every slice of ProB's $(grep -c . <<< "$machos") macOS binaries carries its developers' signature"
+          fi
+
           # probcli finds its lib/ through PROB_HOME; without it the binary
           # falls back to the working directory and dies loading its
           # extensions.  CliStarter sets exactly this before launching.

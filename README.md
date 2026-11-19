@@ -257,13 +257,16 @@ them breaks the app at launch or at the first proof:
 
 A bundled native that arrives with its vendor's Developer ID signature, with
 the hardened runtime and a secure timestamp and still valid, is left alone
-(`vendor_signed` in the script). That is every native but CVC4's: ProB's
-`probcli` and its libraries are signed by HHU, JNA and the Equinox launcher
-library by the Eclipse Foundation. Notarization accepts nested code from
+(`vendor_signed` in the script). That should be every native but CVC4's:
+ProB's `probcli` and its libraries must arrive signed by HHU, JNA and the
+Equinox launcher library by the Eclipse Foundation. Notarization accepts nested code from
 another team, and re-signing would replace the vendor's entitlements with
 ours. `probcli` shows why that matters: its SICStus runtime generates code at
 run time, and re-signed without `allow-jit` the x86_64 build stops at
-`Prolog engine initialization failed`.
+`Prolog engine initialization failed`. So the smoke test requires every slice
+of ProB's macOS binaries to carry a Developer ID signature with the hardened
+runtime and a timestamp, and on a signed release one from a team other than
+ours.
 
 The rest -- the SMT solvers -- take `solver.entitlements`, an empty dict:
 ahead-of-time native code that needs the hardened runtime notarization
